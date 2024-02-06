@@ -139,11 +139,35 @@ struct Elf64_Phdr {
     p_align: u64,		/* Segment alignment, file & memory */
 }
 
+#[derive(Debug, Clone, Copy)]
+#[repr(u32)]
+enum SH_TYPE {
+    SHT_NULL = 0x00, /* Section header table entry unused */
+    SHT_PROGBITS,
+    SHT_SYMTAB,
+    SHT_STRTAB,
+    SHT_RELA,
+    SHT_HASH,
+    SHT_DYNAMIC,
+    SHT_NOTE,
+    SHT_NOBITS,
+    SHT_REL,
+    SHT_SHLIB,
+    SHT_DYNSYM,
+    SHT_INIT_ARRAY,
+    SHT_FINI_ARRAY,
+    SHT_PREINIT_ARRAY,
+    SHT_GROUP,
+    SHT_SYMTAB_SHNDX,
+    SHT_NUM,
+    SHT_GNU_HASH = 0x6ffffff6,
+}
+
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 struct Elf64_Shdr {
     sh_name: u32 ,		/* Section name, index in string tbl */
-    sh_type: u32,		/* Type of section */
+    sh_type: SH_TYPE,		/* Type of section */
     sh_flags: u64,		/* Miscellaneous section attributes */
     sh_addr: u64,		/* Section virtual addr at execution */
     sh_offset: u64,		/* Section file offset */
