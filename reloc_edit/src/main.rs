@@ -120,6 +120,10 @@ enum P_TYPE {
     PT_PHDR, /* Segment containing program header table itself.  */
     PT_TLS, /* Thread-Local Storage template.  */
     PT_LOOS,
+    PT_GNU_EH_FRAME = 0x6474E550, /* The array element specifies the location and size of the exception handling information as defined by the .eh_frame_hdr section. */
+    PT_GNU_STACK,
+    PT_GNU_RELRO,
+    PT_GNU_PROPERTY
 }
 
 #[repr(C, packed)]
@@ -186,9 +190,8 @@ fn main() {
     let e_phentsize = hdr.e_phentsize as usize;
     let e_phnum = hdr.e_phnum as usize;
     let phdr_b = read_file_offset_size(file, e_phoff, e_phentsize*e_phnum).expect("Error while reading phdr");
-    println!("{:?}", phdr_b);
+    //println!("{:?}", phdr_b);
     for i in (0..e_phentsize*e_phnum).step_by(e_phentsize) {
-        println!("{} {} {}",phdr_b.len(), i, i+e_phentsize);
         let (head, body, _tail) = unsafe { &phdr_b[i..i+e_phentsize].align_to::<Elf64_Phdr>() };
         assert!(head.is_empty(), "Data was not aligned");
         let phdr = &body[0];
@@ -200,7 +203,7 @@ fn main() {
     let e_shentsize = hdr.e_shentsize as usize;
     let e_shnum = hdr.e_shnum as usize;
     let phdr_b = read_file_offset_size(file, e_shoff, e_shentsize*e_shnum).expect("Error while reading shdr");
-    println!("{:?}", phdr_b);
+    //println!("{:?}", phdr_b);
     for i in (0..e_shentsize*e_shnum).step_by(e_shentsize) {
         let (head, body, _tail) = unsafe { &phdr_b[i..i+e_shentsize].align_to::<Elf64_Shdr>() };
         assert!(head.is_empty(), "Data was not aligned");
