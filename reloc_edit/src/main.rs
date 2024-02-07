@@ -1,9 +1,13 @@
+#![allow(non_camel_case_types)]
+#![allow(unused)]
+
 use std::env;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::fs;
 use std::io;
 use std::mem;
+
 /*
 /* 64-bit ELF base types. */
 typedef __u64	Elf64_Addr;
@@ -187,6 +191,59 @@ fn read_file_offset_size(filename: &String, offset: u64, size: usize) -> Result<
     Ok(buffer)
 }
 
+#[derive(Debug)]
+struct Elf {
+    header: ElfHdr,
+    program_header: Option<Vec<Elf64_Phdr>>,
+    section_header: Option<Vec<Elf64_Shdr>>,
+}
+
+impl Elf {
+    pub fn load(file: &String) -> Result<Elf, ()>{
+        // ELF Header
+        let hdr_b: Vec<u8> = read_file_offset_size(file, 0, mem::size_of::<ElfHdr>() as usize).expect("Error while reading header");
+        println!("Start {:?}", hdr_b);
+        let (head, body, _tail) = unsafe { hdr_b.align_to::<ElfHdr>() };
+        assert!(head.is_empty(), "Data was not aligned");
+        let hdr = &body[0];
+        println!("{:?}", hdr);
+        let entry = hdr.e_entry;
+        println!("{:x}", entry);
+
+        // Program header table
+        let e_phoff = hdr.e_phoff as u64;
+        let e_phentsize = hdr.e_phentsize as usize;
+        let e_phnum = hdr.e_phnum as usize;
+        let phdr_b = read_file_offset_size(file, e_phoff, e_phentsize*e_phnum).expect("Error while reading phdr");
+        let mut phdr = Vec::<Elf64_Phdr>::new();
+        for i in (0..e_phentsize*e_phnum).step_by(e_phentsize) {
+            let (head, body, _tail) = unsafe { &phdr_b[i..i+e_phentsize].align_to::<Elf64_Phdr>() };
+            assert!(head.is_empty(), "Data was not aligned");
+            phdr.push(body[0]);
+            println!("Header {:x} {:?}",i , phdr[phdr.len()-1]);
+        }
+
+        // Section header table
+        let e_shoff = hdr.e_shoff as u64;
+        let e_shentsize = hdr.e_shentsize as usize;
+        let e_shnum = hdr.e_shnum as usize;
+        let shdr_b = read_file_offset_size(file, e_shoff, e_shentsize*e_shnum).expect("Error while reading shdr");
+        let mut shdr = Vec::<Elf64_Shdr>::new();
+        for i in (0..e_shentsize*e_shnum).step_by(e_shentsize) {
+            let (head, body, _tail) = unsafe { &shdr_b[i..i+e_shentsize].align_to::<Elf64_Shdr>() };
+            assert!(head.is_empty(), "Data was not aligned");
+            shdr.push(body[0]);
+            println!("Header {:x} {:?}",i , shdr[shdr.len()-1]);
+        }
+
+        Ok(Elf {
+            header: *hdr,
+            program_header: Some(phdr),
+            section_header: Some(shdr)
+        })
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -199,39 +256,7 @@ fn main() {
 
     println!("Analysing {}", file);
 
-    // ELF Header
-    let hdr_b: Vec<u8> = read_file_offset_size(file, 0, mem::size_of::<ElfHdr>() as usize).expect("Error while reading header");
-    println!("Start {:?}", hdr_b);
-    let (head, body, _tail) = unsafe { hdr_b.align_to::<ElfHdr>() };
-    assert!(head.is_empty(), "Data was not aligned");
-    let hdr = &body[0];
-    println!("{:?}", hdr);
-    let entry = hdr.e_entry;
-    println!("{:x}", entry);
+    let elf = Elf::load(file);
+    println!("{:?}", elf);
 
-    // Program header table
-    let e_phoff = hdr.e_phoff as u64;
-    let e_phentsize = hdr.e_phentsize as usize;
-    let e_phnum = hdr.e_phnum as usize;
-    let phdr_b = read_file_offset_size(file, e_phoff, e_phentsize*e_phnum).expect("Error while reading phdr");
-    //println!("{:?}", phdr_b);
-    for i in (0..e_phentsize*e_phnum).step_by(e_phentsize) {
-        let (head, body, _tail) = unsafe { &phdr_b[i..i+e_phentsize].align_to::<Elf64_Phdr>() };
-        assert!(head.is_empty(), "Data was not aligned");
-        let phdr = &body[0];
-        println!("Header {:x} {:?}",i , phdr);
-    }
-
-    // Section header table
-    let e_shoff = hdr.e_shoff as u64;
-    let e_shentsize = hdr.e_shentsize as usize;
-    let e_shnum = hdr.e_shnum as usize;
-    let phdr_b = read_file_offset_size(file, e_shoff, e_shentsize*e_shnum).expect("Error while reading shdr");
-    //println!("{:?}", phdr_b);
-    for i in (0..e_shentsize*e_shnum).step_by(e_shentsize) {
-        let (head, body, _tail) = unsafe { &phdr_b[i..i+e_shentsize].align_to::<Elf64_Shdr>() };
-        assert!(head.is_empty(), "Data was not aligned");
-        let phdr = &body[0];
-        println!("Header {:?}" , phdr);
-    }
 }
