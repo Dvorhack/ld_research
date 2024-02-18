@@ -7,6 +7,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::fs;
 use std::io;
 use std::mem;
+use std::ffi::{CString, CStr};
 
 /*
 /* 64-bit ELF base types. */
@@ -253,6 +254,17 @@ struct Elf64_Dyn {
     d_un: u64,
 }
 
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+struct Elf64_Sym {
+    st_name: u32,   /* Offset into the corresponding table's string table */
+    st_info: u8,    /* Symbol type and binding attributes */
+    st_other: u8,   /* Symbol visibility */
+    st_shndx: u16,  /* Each symbol is defined for a particular section */
+    st_value: u64,  /* Either an address or offset */
+    st_size: u64,   /* Size of the actual reference */
+}
+
 impl Elf {
     pub fn load(file: &String) -> Result<Elf, ()>{
         // ELF Header
@@ -326,6 +338,46 @@ impl Elf {
             None => {}
         }
     }
+
+    pub fn has_section(&self, section: SH_TYPE) -> bool {
+        match &self.section_header {
+            Some(shdr) => {
+                shdr.iter().filter(|x| {let y=x.sh_type; y == section} ).count() >= 1
+            }
+            None => false
+        }
+    }
+
+    pub fn has_symbols(&self) -> bool{
+        self.has_section(SH_TYPE::SHT_SYMTAB)
+    }
+
+    pub fn parse_symbols(&self) {
+        match &self.section_header {
+            Some(shdr) => {
+                let sht_symtab = shdr.iter().filter(|x| {let y=x.sh_type; y == SH_TYPE::SHT_SYMTAB} ).next().expect("Does not contains symbols");
+                let shstrtab = shdr[self.header.e_shstrndx as usize];
+                let shstrtab_b = &self.content[shstrtab.sh_offset as usize..(shstrtab.sh_offset+shstrtab.sh_size) as usize];
+                println!("Normaly the seaction strings {:?}", shstrtab_b);
+                
+                println!("Strings:" );
+                for x in shdr.iter(){
+                    println!("\tsh_name -> {:?}",CStr::from_bytes_until_nul(&shstrtab_b[x.sh_name as usize..]).unwrap());
+                }
+
+                let sh_offset = sht_symtab.sh_offset as usize;
+                let sh_size = sht_symtab.sh_size as usize;
+                let symtab_b = &self.content[sh_offset..sh_offset+sh_size];
+                for i in (0..sh_size).step_by(mem::size_of::<Elf64_Sym>()) {
+                    let (head, body, _tail) = unsafe { &symtab_b[i..i+mem::size_of::<Elf64_Sym>()].align_to::<Elf64_Sym>() };
+                    assert!(head.is_empty(), "Data was not aligned");
+                    let toto = &body[0];
+                    println!("{:?}" , toto);
+                }
+            }
+            None => {}
+        }
+    }
 }
 
 fn main() {
@@ -341,7 +393,11 @@ fn main() {
     let elf = Elf::load(file).expect("Error loading elf");
     // println!("{:?}", elf);
 
-    if elf.is_dynamic() {
-        elf.parse_dynamic();
+    // if elf.is_dynamic() {
+    //     elf.parse_dynamic();
+    // }
+
+    if elf.has_symbols() {
+        elf.parse_symbols();
     }
 } 
