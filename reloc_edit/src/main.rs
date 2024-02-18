@@ -112,7 +112,7 @@ struct ElfHdr {
     e_shstrndx: u16,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u32)]
 enum P_TYPE {
     PT_NULL = 0x00, /* Program header table entry unused.  */
@@ -143,7 +143,7 @@ struct Elf64_Phdr {
     p_align: u64,		/* Segment alignment, file & memory */
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u32)]
 enum SH_TYPE {
     SHT_NULL = 0x00, /* Section header table entry unused */
@@ -191,11 +191,66 @@ fn read_file_offset_size(filename: &String, offset: u64, size: usize) -> Result<
     Ok(buffer)
 }
 
+fn read_file(filename: &String)-> Result<Vec<u8>, io::Error>{
+    let metadata = fs::metadata(filename)?;
+    read_file_offset_size(filename, 0, metadata.len() as usize)
+}
+
 #[derive(Debug)]
 struct Elf {
     header: ElfHdr,
     program_header: Option<Vec<Elf64_Phdr>>,
     section_header: Option<Vec<Elf64_Shdr>>,
+    content: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(u64)]
+enum D_TAG {
+    DT_NULL = 0,
+    DT_NEEDED,
+    DT_PLTRELSZ,
+    DT_PLTGOT,
+    DT_HASH,
+    DT_STRTAB,
+    DT_SYMTAB,
+    DT_RELA,
+    DT_RELASZ,
+    DT_RELAENT,
+    DT_STRSZ,
+    DT_SYMENT,
+    DT_INIT,
+    DT_FINI,
+    DT_SONAME,
+    DT_RPATH,
+    DT_SYMBOLIC,
+    DT_REL,
+    DT_RELSZ,
+    DT_RELENT,
+    DT_PLTREL,
+    DT_DEBUG,
+    DT_TEXTREL,
+    DT_JMPREL,
+    DT_BIND_NOW,
+    DT_INIT_ARRAY = 25,
+    DT_FINI_ARRAY,
+    DT_INIT_ARRAYSZ,
+    DT_FINI_ARRAYSZ,
+    DT_GNU_HASH = 0x6ffffef5,
+    DT_VERSYM = 0x6ffffff0,
+    DT_RELACOUNT = 0x6ffffff9,
+    DT_FLAGS_1 = 0x6ffffffb,
+    DT_VERDEF,
+    DT_VERDEFNUM,
+    DT_VERNEED,
+    DT_VERNEEDNUM,
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+struct Elf64_Dyn {
+    d_tag: D_TAG,
+    d_un: u64,
 }
 
 impl Elf {
@@ -220,7 +275,7 @@ impl Elf {
             let (head, body, _tail) = unsafe { &phdr_b[i..i+e_phentsize].align_to::<Elf64_Phdr>() };
             assert!(head.is_empty(), "Data was not aligned");
             phdr.push(body[0]);
-            println!("Header {:x} {:?}",i , phdr[phdr.len()-1]);
+            println!("{:?}" , phdr[phdr.len()-1]);
         }
 
         // Section header table
@@ -233,14 +288,43 @@ impl Elf {
             let (head, body, _tail) = unsafe { &shdr_b[i..i+e_shentsize].align_to::<Elf64_Shdr>() };
             assert!(head.is_empty(), "Data was not aligned");
             shdr.push(body[0]);
-            println!("Header {:x} {:?}",i , shdr[shdr.len()-1]);
+            println!("{:?}" , shdr[shdr.len()-1]);
         }
-
+        let content = read_file(file).expect("Unable to read he hole file");
         Ok(Elf {
             header: *hdr,
             program_header: Some(phdr),
-            section_header: Some(shdr)
+            section_header: Some(shdr),
+            content: content,
         })
+    }
+
+    pub fn is_dynamic(&self) -> bool {
+        match &self.section_header {
+            Some(shdr) => {
+                shdr.iter().filter(|x| {let y=x.sh_type; y == SH_TYPE::SHT_DYNAMIC} ).count() >= 1
+            }
+            None => false
+        }
+    }
+
+    pub fn parse_dynamic(&self){
+        match &self.section_header {
+            Some(shdr) => {
+                let sht_dynamic = shdr.iter().filter(|x| {let y=x.sh_type; y == SH_TYPE::SHT_DYNAMIC} ).next().expect("In not dynamic");
+
+                let sh_offset = sht_dynamic.sh_offset as usize;
+                let sh_size = sht_dynamic.sh_size as usize;
+                let dyn_b = &self.content[sh_offset..sh_offset+sh_size];
+                for i in (0..sh_size).step_by(0x10) {
+                    let (head, body, _tail) = unsafe { &dyn_b[i..i+0x10].align_to::<Elf64_Dyn>() };
+                    assert!(head.is_empty(), "Data was not aligned");
+                    let toto = &body[0];
+                    println!("{:?}" , toto);
+                }
+            }
+            None => {}
+        }
     }
 }
 
@@ -253,10 +337,11 @@ fn main() {
     }
 
     let file = &args[1];
-
     println!("Analysing {}", file);
+    let elf = Elf::load(file).expect("Error loading elf");
+    // println!("{:?}", elf);
 
-    let elf = Elf::load(file);
-    println!("{:?}", elf);
-
-}
+    if elf.is_dynamic() {
+        elf.parse_dynamic();
+    }
+} 
