@@ -1,13 +1,17 @@
 #![allow(non_camel_case_types)]
 #![allow(unused)]
+#![allow(non_snake_case)]
 
 use std::env;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use std::fs;
-use std::io;
-use std::mem;
+use std::{fs, io, mem, fmt};
 use std::ffi::{CString, CStr};
+use std::collections::HashMap;
+
+extern crate num;
+extern crate num_derive;
+use num_derive::FromPrimitive;
 
 /*
 /* 64-bit ELF base types. */
@@ -201,7 +205,9 @@ fn read_file(filename: &String)-> Result<Vec<u8>, io::Error>{
 struct Elf {
     header: ElfHdr,
     program_header: Option<Vec<Elf64_Phdr>>,
+    programHdr: Option<Vec<ProgramHdr>>,
     section_header: Option<Vec<Elf64_Shdr>>,
+    sectionHdr: Option<HashMap<String, SectionHdr>>,
     content: Vec<u8>,
 }
 
@@ -254,15 +260,137 @@ struct Elf64_Dyn {
     d_un: u64,
 }
 
+
+
+#[derive( Copy, Clone)]
+#[repr(C, packed)]
+struct ST_INFO {
+    value: u8
+}
+
+#[derive(Debug, FromPrimitive)]
+enum ST_TYPE {
+    STT_NOTYPE = 	0, // The symbol's type is not specified. 
+    STT_OBJECT = 	1, // The symbol is associated with a data object, such as a variable, an array, and so on. 
+    STT_FUNC = 	2, // The symbol is associated with a function or other executable code. 
+    STT_SECTION = 	3, // The symbol is associated with a section. 
+    STT_FILE = 	4, // Conventionally, the symbol's name gives the name of the source file associated with the object file.
+    STT_COMMON = 	5, // The symbol labels an uninitialized common block
+    STT_TLS = 	6, // The symbol specifies a Thread-Local Storage entity.
+    STT_LOOS = 	10,
+    STT_HIOS = 	12,
+    STT_LOPROC = 	13,
+    STT_HIPROC = 	15,
+}
+
+#[derive(Debug, FromPrimitive)]
+enum ST_BIND {
+    STB_LOCAL = 0,
+    STB_GLOBAL,
+    STB_WEAK,
+    STB_LOOS = 10,
+    STB_HIOS = 12,
+    STB_LOPROC,
+    STB_HIPROC = 15
+}
+
+impl fmt::Debug for ST_INFO {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let st_type: ST_TYPE = num::FromPrimitive::from_u8(self.value & 0xf).unwrap() ;
+        let st_bind: ST_BIND = num::FromPrimitive::from_u8(self.value >> 4).unwrap();
+        write!(f, "{} = {:?} {:?}", self.value, st_type, st_bind)
+    }
+}
+
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 struct Elf64_Sym {
     st_name: u32,   /* Offset into the corresponding table's string table */
-    st_info: u8,    /* Symbol type and binding attributes */
+    st_info: ST_INFO,    /* Symbol type and binding attributes */
     st_other: u8,   /* Symbol visibility */
     st_shndx: u16,  /* Each symbol is defined for a particular section */
     st_value: u64,  /* Either an address or offset */
     st_size: u64,   /* Size of the actual reference */
+}
+
+#[derive(Debug)]
+struct SectionHdr {
+    name: String,
+    r#type: SH_TYPE,
+    offset: usize,
+    size: usize,
+}
+
+
+#[derive(Debug, Copy, Clone)]
+struct ProgramHdr {
+    
+}
+
+#[derive( Copy, Clone)]
+#[repr(C, packed)]
+struct R_INFO {
+    value: u64
+}
+
+#[derive(Debug, FromPrimitive)]
+enum R_SYM {
+    STT_NOTYPE = 	0, // The symbol's type is not specified. 
+    STT_OBJECT = 	1, // The symbol is associated with a data object, such as a variable, an array, and so on. 
+    STT_FUNC = 	2, // The symbol is associated with a function or other executable code. 
+    STT_SECTION = 	3, // The symbol is associated with a section. 
+    STT_FILE = 	4, // Conventionally, the symbol's name gives the name of the source file associated with the object file.
+    STT_COMMON = 	5, // The symbol labels an uninitialized common block
+    STT_TLS = 	6, // The symbol specifies a Thread-Local Storage entity.
+    STT_LOOS = 	10,
+    STT_HIOS = 	12,
+    STT_LOPROC = 	13,
+    STT_HIPROC = 	15,
+}
+
+#[derive(Debug, FromPrimitive)]
+enum R_TYPE {
+    R_AMD64_NONE = 0,
+    R_AMD64_64,
+    R_AMD64_PC32,
+    R_AMD64_GOT32,
+    R_X86_64_PLT32,//,
+    R_X86_64_COPY,
+    R_X86_64_GLOB_DAT,
+    R_X86_64_JUMP_SLOT,
+    R_X86_64_RELATIVE,
+    R_X86_64_GOTPCREL,
+    R_X86_64_32,// 	10 	word32 	S + A
+    R_X86_64_32S,// 	11 	word32 	S + A
+    R_X86_64_16,// 	12 	word16 	S + A
+    R_X86_64_PC16,// 	13 	word16 	S + A - P
+    R_X86_64_8,// 	14 	word8 	S + A
+    R_X86_64_PC8,// 	15 	word8 	S + A - P
+    R_X86_64_DPTMOD64,// 	16 	word64 	 
+    R_X86_64_DTPOFF64,// 	17 	word64 	 
+    R_X86_64_TPOFF64,// 	18 	word64 	 
+    R_X86_64_TLSGD,// 	19 	word32 	 
+    R_X86_64_TLSLD,// 	20 	word32 	 
+    R_X86_64_DTPOFF32,// 	21 	word32 	 
+    R_X86_64_GOTTPOFF,// 	22 	word32 	 
+    R_X86_64_TPOFF32,// 	23 	word32 	 
+}
+
+impl fmt::Debug for R_INFO {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = self.value;
+        let r_type: R_TYPE = num::FromPrimitive::from_u64(value & 0xffffffff).unwrap() ;
+        let r_bind = self.value >> 32;
+        write!(f, "{} = {:?} {:?}", value, r_type, r_bind)
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+struct Elf64_Rela {
+    r_offset: u64,
+    r_info: R_INFO,
+    r_addend: u64
 }
 
 impl Elf {
@@ -303,11 +431,29 @@ impl Elf {
             println!("{:?}" , shdr[shdr.len()-1]);
         }
         let content = read_file(file).expect("Unable to read he hole file");
+
+        // Build internal representation
+        let shstrtab = shdr[hdr.e_shstrndx as usize];
+        let shstrtab_b = &content[shstrtab.sh_offset as usize..(shstrtab.sh_offset+shstrtab.sh_size) as usize];
+        let mut sectionHdr: HashMap<String, SectionHdr> = HashMap::new();
+        for i in shdr.iter() {
+            let name = CStr::from_bytes_until_nul(&shstrtab_b[i.sh_name as usize..]).unwrap().to_str().unwrap().to_owned();
+            println!("{} {:?}" , name, i);
+            sectionHdr.insert(name.clone(), SectionHdr{
+                name: name,
+                r#type: i.sh_type,
+                offset: i.sh_offset as usize,
+                size: i.sh_size as usize,
+            });
+        }
+
         Ok(Elf {
             header: *hdr,
             program_header: Some(phdr),
+            programHdr: None,
             section_header: Some(shdr),
             content: content,
+            sectionHdr: Some(sectionHdr),
         })
     }
 
@@ -353,29 +499,38 @@ impl Elf {
     }
 
     pub fn parse_symbols(&self) {
-        match &self.section_header {
+        match &self.sectionHdr {
             Some(shdr) => {
-                let sht_symtab = shdr.iter().filter(|x| {let y=x.sh_type; y == SH_TYPE::SHT_SYMTAB} ).next().expect("Does not contains symbols");
-                let shstrtab = shdr[self.header.e_shstrndx as usize];
-                let shstrtab_b = &self.content[shstrtab.sh_offset as usize..(shstrtab.sh_offset+shstrtab.sh_size) as usize];
-                println!("Normaly the seaction strings {:?}", shstrtab_b);
-                
-                println!("Strings:" );
-                for x in shdr.iter(){
-                    println!("\tsh_name -> {:?}",CStr::from_bytes_until_nul(&shstrtab_b[x.sh_name as usize..]).unwrap());
-                }
-
-                let sh_offset = sht_symtab.sh_offset as usize;
-                let sh_size = sht_symtab.sh_size as usize;
-                let symtab_b = &self.content[sh_offset..sh_offset+sh_size];
-                for i in (0..sh_size).step_by(mem::size_of::<Elf64_Sym>()) {
+                let sht_symtab = &shdr[".symtab"];
+                let symtab_b = &self.content[sht_symtab.offset..sht_symtab.offset+sht_symtab.size];
+                let sht_strtab = &shdr[".strtab"];
+                let strtab_b = &self.content[sht_strtab.offset..sht_strtab.offset+sht_strtab.size];
+                for i in (0..sht_symtab.size).step_by(mem::size_of::<Elf64_Sym>()) {
                     let (head, body, _tail) = unsafe { &symtab_b[i..i+mem::size_of::<Elf64_Sym>()].align_to::<Elf64_Sym>() };
                     assert!(head.is_empty(), "Data was not aligned");
                     let toto = &body[0];
-                    println!("{:?}" , toto);
+                    let name = CStr::from_bytes_until_nul(&strtab_b[toto.st_name as usize..]).unwrap();
+                    println!("{:?} {:?}" , name, toto);
                 }
             }
             None => {}
+        }
+    }
+
+    pub fn parse_relocations(&self) {
+        match (&self.sectionHdr, &self.program_header) {
+            (Some(shdr), Some(phdr)) => {
+                let sht_reladyn = &shdr[".rela.dyn"];
+                let reladyn_b = &self.content[sht_reladyn.offset..sht_reladyn.offset+sht_reladyn.size];
+
+                for i in (0..sht_reladyn.size).step_by(mem::size_of::<Elf64_Rela>()) {
+                    let (head, body, _tail) = unsafe { &reladyn_b[i..i+mem::size_of::<Elf64_Rela>()].align_to::<Elf64_Rela>() };
+                    assert!(head.is_empty(), "Data was not aligned");
+                    let toto = &body[0];
+                    println!("{:?}", toto);
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -393,11 +548,12 @@ fn main() {
     let elf = Elf::load(file).expect("Error loading elf");
     // println!("{:?}", elf);
 
-    // if elf.is_dynamic() {
-    //     elf.parse_dynamic();
-    // }
-
-    if elf.has_symbols() {
-        elf.parse_symbols();
+    if elf.is_dynamic() {
+        elf.parse_dynamic();
+        elf.parse_relocations();
     }
+
+    // if elf.has_symbols() {
+    //     elf.parse_symbols();
+    // }
 } 
